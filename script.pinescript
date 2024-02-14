@@ -1,0 +1,45 @@
+//@version=5
+strategy(title="Heiken Ashi Swing Trading Strategy with Dynamic Stop Loss", overlay=true)
+
+// Define the Heiken Ashi candles
+var float ha_open = na
+ha_close = hlc3
+ha_open := na(ha_open[1]) ? (open + close) / 2 : (ha_open[1] + ha_close[1]) / 2
+ha_high = math.max(high, ha_open, ha_close)
+ha_low = math.min(low, ha_open, ha_close)
+
+// Define a doji as a candle with both an upper and lower shadow
+doji = ha_open < ha_high and ha_open != ha_low and ha_close != ha_high and ha_close > ha_low
+
+// Define indicators for long and short
+bullish = doji[2] and ha_close[1] > ha_open[1] and ha_low[1] == ha_open[1] and ha_close > ha_open and ha_low == ha_open
+bearish = doji[2] and ha_close[1] < ha_open[1] and ha_high[1] == ha_open[1] and ha_close < ha_open and ha_high == ha_open
+
+// Define stop loss level inputs
+long_stop_loss_percentage = input(2.0, title="Long Stop Loss Percentage") / 100
+short_stop_loss_percentage = input(2.0, title="Short Stop Loss Percentage") / 100
+
+// Calculate the stop loss levels based on the position type
+long_stop_loss_level = strategy.position_avg_price * (1 - long_stop_loss_percentage)
+short_stop_loss_level = strategy.position_avg_price * (1 + short_stop_loss_percentage)
+
+// Define trade entry conditions
+if (bullish)
+    strategy.entry("Buy", strategy.long)
+
+if (bearish)
+    strategy.entry("Sell", strategy.short)
+
+// Apply dynamic stop loss based on the position type
+if (strategy.position_size > 0) // For long positions
+    strategy.exit("Exit Long", "Buy", stop=long_stop_loss_level)
+
+if (strategy.position_size < 0) // For short positions
+    strategy.exit("Exit Short", "Sell", stop=short_stop_loss_level)
+
+// Define trade exit conditions
+if (strategy.position_size > 0 and doji) // Exit long position on doji
+    strategy.close("Buy")
+
+if (strategy.position_size < 0 and doji) // Exit short position on doji
+    strategy.close("Sell")
