@@ -2,44 +2,70 @@
 strategy(title="Heiken Ashi Swing Trading Strategy with Dynamic Stop Loss", overlay=true)
 
 // Define the Heiken Ashi candles
-var float ha_open = na
-ha_close = hlc3
-ha_open := na(ha_open[1]) ? (open + close) / 2 : (ha_open[1] + ha_close[1]) / 2
-ha_high = math.max(high, ha_open, ha_close)
-ha_low = math.min(low, ha_open, ha_close)
+var float ha_open = na  // Initialize Heiken Ashi open price as 'not available'
+ha_close = hlc3  // Heiken Ashi close price is calculated as the average of high, low, and close
+ha_open := na(ha_open[1]) ? (open + close) / 2 : (ha_open[1] + ha_close[1]) / 2  // If previous ha_open is not available, initialize it; otherwise, calculate it as the average of the previous ha_open and ha_close
+ha_high = math.max(high, ha_open, ha_close)  // Heiken Ashi high is the maximum of the current high, ha_open, and ha_close
+ha_low = math.min(low, ha_open, ha_close)  // Heiken Ashi low is the minimum of the current low, ha_open, and ha_close
 
 // Define a doji as a candle with both an upper and lower shadow
-doji = ha_open < ha_high and ha_open != ha_low and ha_close != ha_high and ha_close > ha_low
+doji = ha_open < ha_high and ha_open != ha_low and ha_close != ha_high and ha_close > ha_low  // A doji is defined as a candle where ha_open is not equal to ha_low or ha_high, indicating both upper and lower shadows
+
+// Ignore candles with small shadows (i.e., insignificant movement)
+shadow_threshold = input(0.001, title="Shadow Threshold")  // Define a threshold for shadow size to filter out insignificant movements
+significant_movement = (ha_high - ha_low) > shadow_threshold  // Check if the movement between ha_high and ha_low is greater than the defined threshold
+doji := doji and significant_movement  // Update doji condition to only include significant movements
 
 // Define indicators for long and short
-bullish = doji[2] and ha_close[1] > ha_open[1] and ha_low[1] == ha_open[1] and ha_close > ha_open and ha_low == ha_open
-bearish = doji[2] and ha_close[1] < ha_open[1] and ha_high[1] == ha_open[1] and ha_close < ha_open and ha_high == ha_open
+bullish = doji[2] and ha_close[1] > ha_open[1] and ha_low[1] == ha_open[1] and ha_close > ha_open and ha_low == ha_open  // Bullish condition: previous doji, previous close higher than open, and current close higher than open
+bearish = doji[2] and ha_close[1] < ha_open[1] and ha_high[1] == ha_open[1] and ha_close < ha_open and ha_high == ha_open  // Bearish condition: previous doji, previous close lower than open, and current close lower than open
 
 // Define stop loss level inputs
-long_stop_loss_percentage = input(2.0, title="Long Stop Loss Percentage") / 100
-short_stop_loss_percentage = input(2.0, title="Short Stop Loss Percentage") / 100
+long_stop_loss_percentage = input(2.0, title="Long Stop Loss Percentage") / 100  // Input for long stop loss percentage
+short_stop_loss_percentage = input(2.0, title="Short Stop Loss Percentage") / 100  // Input for short stop loss percentage
 
 // Calculate the stop loss levels based on the position type
-long_stop_loss_level = strategy.position_avg_price * (1 - long_stop_loss_percentage)
-short_stop_loss_level = strategy.position_avg_price * (1 + short_stop_loss_percentage)
+long_stop_loss_level = strategy.position_avg_price * (1 - long_stop_loss_percentage)  // Calculate stop loss level for long position
+short_stop_loss_level = strategy.position_avg_price * (1 + short_stop_loss_percentage)  // Calculate stop loss level for short position
+
+// Define a counter for bullish trades to limit the number of re-entries
+var int bullish_trades = 0  // Initialize counter for bullish trades
+bullish_trade_limit = 3  // Set limit for the number of bullish trades
 
 // Define trade entry conditions
-if (bullish)
+if (bullish and bullish_trades < bullish_trade_limit)  // Enter long position if bullish condition is met and trade limit is not exceeded
     strategy.entry("Buy", strategy.long)
+    bullish_trades += 1  // Increment bullish trade counter
 
-if (bearish)
+if (bearish)  // Enter short position if bearish condition is met
     strategy.entry("Sell", strategy.short)
+    bullish_trades := 0  // Reset bullish trade counter when entering a short trade
 
 // Apply dynamic stop loss based on the position type
-if (strategy.position_size > 0) // For long positions
-    strategy.exit("Exit Long", "Buy", stop=long_stop_loss_level)
+if (strategy.position_size > 0)  // For long positions
+    strategy.exit("Exit Long", "Buy", stop=long_stop_loss_level)  // Set stop loss for long position
 
-if (strategy.position_size < 0) // For short positions
-    strategy.exit("Exit Short", "Sell", stop=short_stop_loss_level)
+if (strategy.position_size < 0)  // For short positions
+    strategy.exit("Exit Short", "Sell", stop=short_stop_loss_level)  // Set stop loss for short position
 
 // Define trade exit conditions
-if (strategy.position_size > 0 and doji) // Exit long position on doji
+if (strategy.position_size > 0 and doji)  // Exit long position on doji
     strategy.close("Buy")
 
-if (strategy.position_size < 0 and doji) // Exit short position on doji
+if (strategy.position_size < 0 and doji)  // Exit short position on doji
     strategy.close("Sell")
+
+// Remember the candles before exit
+var float prev_ha_open = na  // Variable to store previous ha_open
+var float prev_ha_close = na  // Variable to store previous ha_close
+var float prev_ha_high = na  // Variable to store previous ha_high
+var float prev_ha_low = na  // Variable to store previous ha_low
+
+if (strategy.position_size == 0)  // When no position is open, store the previous Heiken Ashi candle values
+    prev_ha_open := ha_open
+    prev_ha_close := ha_close
+    prev_ha_high := ha_high
+    prev_ha_low := ha_low
+
+// Plot Heiken Ashi candles
+plotcandle(ha_open, ha_high, ha_low, ha_close, title="Heiken Ashi", color=(ha_close >= ha_open ? color.green : color.red))  // Plot Heiken Ashi candles with green color for bullish and red for bearish
